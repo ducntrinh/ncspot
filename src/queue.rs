@@ -2,14 +2,19 @@ use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "notify")]
+use image;
+use notify_rust::Hint;
+use notify_rust::Image;
 use notify_rust::Notification;
+use reqwest;
+use std::convert::TryFrom;
 
 use rand::prelude::*;
 use strum_macros::Display;
 
-use crate::playable::Playable;
 use crate::spotify::Spotify;
 use crate::{config::Config, spotify::PlayerEvent};
+use crate::{playable::Playable, traits::ListItem};
 
 #[derive(Display, Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum RepeatSetting {
@@ -265,8 +270,31 @@ impl Queue {
             self.spotify.update_track();
             if self.cfg.values().notify.unwrap_or(false) {
                 #[cfg(feature = "notify")]
-                if let Err(e) = Notification::new().summary(&track.to_string()).show() {
-                    error!("error showing notification: {:?}", e);
+                let img = track
+                    .track()
+                    .and_then(|t| t.cover_url)
+                    .and_then(|cover_url| reqwest::get(&cover_url).ok())
+                    .and_then(|mut response| {
+                        let mut buf: Vec<u8> = vec![];
+                        match response.copy_to(&mut buf) {
+                            Ok(_) => Some(buf),
+                            _ => None,
+                        }
+                    })
+                    .and_then(|img_bytes| image::load_from_memory(img_bytes.as_slice()).ok())
+                    .unwrap();
+                match track {
+                    Playable::Track(internal_track) => {
+                        if let Err(e) = Notification::new()
+                            .summary(&internal_track.title)
+                            .body(&internal_track.artists.join(", "))
+                            .hint(Hint::ImageData(Image::try_from(img).unwrap()))
+                            .show()
+                        {
+                            error!("error showing notification: {:?}", e);
+                        }
+                    }
+                    _ => (),
                 }
             }
         }

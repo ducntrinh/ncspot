@@ -17,6 +17,9 @@ extern crate tokio_timer;
 extern crate unicode_width;
 extern crate webbrowser;
 
+#[cfg(feature = "notify")]
+extern crate image;
+
 #[macro_use]
 extern crate serde;
 extern crate serde_json;
